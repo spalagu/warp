@@ -1248,8 +1248,8 @@ fn test_alt_screen_select_with_sgr_mouse() {
                 });
                 model.set_mode(ansi::Mode::SgrMouse);
                 assert!(model.is_alt_screen_active());
-                assert!(!should_intercept_mouse(&model, false, ctx));
-                assert!(should_intercept_mouse(&model, true, ctx));
+                assert!(!should_intercept_mouse(&model, false, true, ctx));
+                assert!(should_intercept_mouse(&model, true, true, ctx));
 
                 // Write a bunch of characters into the alt screen.
                 // ABCDEFG

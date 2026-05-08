@@ -57,7 +57,8 @@ use crate::settings::{
     QUAKE_WINDOW_AUTOHIDE_SUPPORTED,
 };
 use crate::terminal::alt_screen_reporting::{
-    AltScreenReporting, FocusReportingEnabled, MouseReportingEnabled, ScrollReportingEnabled,
+    AltScreenReporting, FocusReportingEnabled, MouseReportingEnabled, NativeLeftDragSelectEnabled,
+    ScrollReportingEnabled,
 };
 use crate::terminal::general_settings::{
     AutoOpenCodeReviewPaneOnFirstAgentChange, GeneralSettings, LinkTooltip, LoginItem,
@@ -462,6 +463,22 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
         ),
     );
 
+    toggle_binding_pairs.push(
+        ToggleSettingActionPair::new(
+            "native left drag select",
+            builder(SettingsAction::FeaturesPageToggle(
+                FeaturesPageAction::ToggleNativeLeftDragSelect,
+            )),
+            context,
+            flags::NATIVE_LEFT_DRAG_SELECT_CONTEXT_FLAG,
+        )
+        .is_supported_on_current_platform(
+            AltScreenReporting::as_ref(app)
+                .native_left_drag_select_enabled
+                .is_supported_on_current_platform(),
+        ),
+    );
+
     toggle_binding_pairs.push(ToggleSettingActionPair::new(
         "smart select",
         builder(SettingsAction::FeaturesPageToggle(
@@ -609,6 +626,7 @@ pub enum FeaturesPageAction {
     ToggleGlobalWorkflowsInUniversalSearch,
     ToggleScrollReporting,
     ToggleFocusReporting,
+    ToggleNativeLeftDragSelect,
     ToggleLongRunningNotifications,
     SetLongRunningNotificationThreshold,
     /// Legacy. To be combined with `ToggleNeedsAttentionNotifications` when desktop notifs are unflagged.
@@ -877,6 +895,10 @@ impl FeaturesPageAction {
             Self::ToggleFocusReporting => TelemetryEvent::FeaturesPageAction {
                 action: "ToggleFocusReporting".to_string(),
                 value: to_string(*reporting_settings.focus_reporting_enabled),
+            },
+            Self::ToggleNativeLeftDragSelect => TelemetryEvent::FeaturesPageAction {
+                action: "ToggleNativeLeftDragSelect".to_string(),
+                value: to_string(*reporting_settings.native_left_drag_select_enabled),
             },
             Self::QuakeEditorSetPinPosition(position) => TelemetryEvent::FeaturesPageAction {
                 action: "QuakeEditorSetPinPosition".to_string(),
@@ -1507,6 +1529,15 @@ impl TypedActionView for FeaturesPageView {
                         .focus_reporting_enabled
                         .toggle_and_save_value(ctx)
                         .expect("FocusReportingEnabled failed to serialize");
+                });
+                ctx.notify();
+            }
+            ToggleNativeLeftDragSelect => {
+                AltScreenReporting::handle(ctx).update(ctx, |reporting, ctx| {
+                    reporting
+                        .native_left_drag_select_enabled
+                        .toggle_and_save_value(ctx)
+                        .expect("NativeLeftDragSelectEnabled failed to serialize");
                 });
                 ctx.notify();
             }
@@ -2700,6 +2731,12 @@ impl FeaturesPageView {
             .is_supported_on_current_platform()
         {
             terminal_widgets.push(Box::new(FocusReportingWidget::default()));
+        }
+        if reporting_settings
+            .native_left_drag_select_enabled
+            .is_supported_on_current_platform()
+        {
+            terminal_widgets.push(Box::new(NativeLeftDragSelectWidget::default()));
         }
 
         let terminal_settings = TerminalSettings::as_ref(ctx);
@@ -6572,6 +6609,53 @@ impl SettingsWidget for FocusReportingWidget {
                 .build()
                 .on_click(move |ctx, _, _| {
                     ctx.dispatch_typed_action(FeaturesPageAction::ToggleFocusReporting)
+                })
+                .finish(),
+            None,
+        )
+    }
+}
+
+#[derive(Default)]
+struct NativeLeftDragSelectWidget {
+    switch_state: SwitchStateHandle,
+}
+
+impl SettingsWidget for NativeLeftDragSelectWidget {
+    type View = FeaturesPageView;
+
+    fn search_terms(&self) -> &str {
+        "native left drag select cmd c copy iterm cjk"
+    }
+
+    fn render(
+        &self,
+        view: &Self::View,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let reporting_settings = AltScreenReporting::as_ref(app);
+        let ui_builder = appearance.ui_builder();
+        render_body_item::<FeaturesPageAction>(
+            "Native Left-Drag Selection".into(),
+            None,
+            LocalOnlyIconState::for_setting(
+                NativeLeftDragSelectEnabled::storage_key(),
+                NativeLeftDragSelectEnabled::sync_to_cloud(),
+                &mut view
+                    .button_mouse_states
+                    .local_only_icon_tooltip_states
+                    .borrow_mut(),
+                app,
+            ),
+            ToggleState::Enabled,
+            appearance,
+            ui_builder
+                .switch(self.switch_state.clone())
+                .check(*reporting_settings.native_left_drag_select_enabled.value())
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(FeaturesPageAction::ToggleNativeLeftDragSelect)
                 })
                 .finish(),
             None,
