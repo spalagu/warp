@@ -136,6 +136,9 @@ pub enum FileTreeAction {
     CDToDirectory {
         id: FileTreeIdentifier,
     },
+    RefreshDirectory {
+        id: FileTreeIdentifier,
+    },
     DismissEditor,
     ItemDroppedOnInput {
         id: FileTreeIdentifier,
@@ -2370,6 +2373,13 @@ impl FileTreeView {
                             .with_on_select_action(FileTreeAction::OpenInNewTab { id: id.clone() })
                             .into_item(),
                     );
+                    items.push(
+                        MenuItemFields::new("Refresh")
+                            .with_on_select_action(FileTreeAction::RefreshDirectory {
+                                id: id.clone(),
+                            })
+                            .into_item(),
+                    );
                 }
             };
 
@@ -2535,6 +2545,32 @@ impl FileTreeView {
 
         ctx.emit(FileTreeEvent::CDToDirectory { path });
     }
+
+    /// Re-reads the right-clicked directory's contents from disk and updates the tree.
+    /// Surgical: only the targeted directory is re-scanned (one level deep, matching lazy-load behavior).
+    /// Bypasses watcher staleness from dropped FSEvents or lazy-load mutation drops.
+    #[cfg(feature = "local_fs")]
+    fn refresh_directory(&mut self, id: &FileTreeIdentifier, ctx: &mut ViewContext<Self>) {
+        let Some(root_dir) = self.root_directories.get(&id.root) else {
+            return;
+        };
+        let Some(item) = root_dir.items.get(id.index) else {
+            return;
+        };
+        let FileTreeItem::DirectoryHeader { .. } = item else {
+            return;
+        };
+        let dir_path = item.path().clone();
+        let root_path = id.root.clone();
+        self.repository_metadata_model.update(ctx, |model, ctx| {
+            if let Err(err) = model.load_directory(&root_path, &dir_path, ctx) {
+                log::warn!("Refresh failed for {dir_path:?}: {err:?}");
+            }
+        });
+    }
+
+    #[cfg(not(feature = "local_fs"))]
+    fn refresh_directory(&mut self, _id: &FileTreeIdentifier, _ctx: &mut ViewContext<Self>) {}
 
     fn rename_item(&mut self, id: &FileTreeIdentifier, ctx: &mut ViewContext<Self>) {
         let exists = self
@@ -3099,6 +3135,12 @@ impl TypedActionView for FileTreeView {
             FileTreeAction::CDToDirectory { id } => {
                 if !self.is_remote_item(id) {
                     self.cd_to_directory(id, ctx);
+                }
+                self.context_menu_state.take();
+            }
+            FileTreeAction::RefreshDirectory { id } => {
+                if !self.is_remote_item(id) {
+                    self.refresh_directory(id, ctx);
                 }
                 self.context_menu_state.take();
             }
