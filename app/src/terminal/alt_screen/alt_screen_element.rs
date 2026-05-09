@@ -275,7 +275,7 @@ impl AltScreenElement {
             SelectionType::from_click_count(click_count)
         };
 
-        if should_intercept_mouse(&self.model.lock(), mouse_state.modifiers().shift, app) {
+        if should_intercept_mouse(&self.model.lock(), mouse_state.modifiers().shift, true, app) {
             ctx.dispatch_typed_action(TerminalAction::AltSelect(SelectAction::Begin {
                 point,
                 side,
@@ -302,7 +302,7 @@ impl AltScreenElement {
 
         let point = self.coord_to_point(local_position);
 
-        if should_intercept_mouse(&self.model.lock(), mouse_state.modifiers().shift, app) {
+        if should_intercept_mouse(&self.model.lock(), mouse_state.modifiers().shift, false, app) {
             ctx.dispatch_typed_action(TerminalAction::AltScreenContextMenu {
                 position: local_position,
             });
@@ -400,7 +400,7 @@ impl AltScreenElement {
             ctx.dispatch_typed_action(TerminalAction::AltSelect(SelectAction::End));
         }
 
-        if !should_intercept_mouse(&self.model.lock(), mouse_state.modifiers().shift, app) {
+        if !should_intercept_mouse(&self.model.lock(), mouse_state.modifiers().shift, true, app) {
             ctx.dispatch_typed_action(TerminalAction::AltMouseAction(mouse_state.set_point(point)));
         }
 
@@ -435,7 +435,7 @@ impl AltScreenElement {
             }));
             is_mouse_dragged = true;
         }
-        if !should_intercept_mouse(&self.model.lock(), mouse_state.modifiers().shift, app) {
+        if !should_intercept_mouse(&self.model.lock(), mouse_state.modifiers().shift, true, app) {
             ctx.dispatch_typed_action(TerminalAction::AltMouseAction(mouse_state.set_point(point)));
         }
         is_mouse_dragged
