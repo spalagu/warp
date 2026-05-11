@@ -10795,6 +10795,7 @@ impl TerminalView {
                                                         remote_host,
                                                         draft_text: None,
                                                         custom_command_prefix: custom_command_prefix.clone(),
+                                                        viewed_after_last_done: true,
                                                     },
                                                     ctx,
                                                 );

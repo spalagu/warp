@@ -54,9 +54,10 @@ use crate::window_settings::{
 };
 use crate::workspace::header_toolbar_editor::HeaderToolbarInlineEditor;
 use crate::workspace::tab_settings::{
-    DirectoryTabColor, PreserveActiveTabColor, ShowCodeReviewButton, ShowIndicatorsButton,
-    ShowVerticalTabPanelInRestoredWindows, TabCloseButtonPosition, TabSettings,
-    TabSettingsChangedEvent, UseLatestUserPromptAsConversationTitleInTabNames, UseVerticalTabs,
+    ColorTabsByCliAgentStatus, DirectoryTabColor, PreserveActiveTabColor, ShowCodeReviewButton,
+    ShowIndicatorsButton, ShowVerticalTabPanelInRestoredWindows, TabCloseButtonPosition,
+    TabSettings, TabSettingsChangedEvent, UseLatestUserPromptAsConversationTitleInTabNames,
+    UseVerticalTabs,
     WorkspaceDecorationVisibility,
 };
 use crate::workspace::WorkspaceAction;
@@ -459,6 +460,7 @@ pub enum AppearancePageAction {
     ToggleTabIndicators,
     ToggleShowCodeReviewButton,
     TogglePreserveActiveTabColor,
+    ToggleColorTabsByCliAgentStatus,
     ToggleVerticalTabs,
     ToggleShowVerticalTabPanelInRestoredWindows,
     ToggleUseLatestUserPromptAsConversationTitleInTabNames,
@@ -598,6 +600,7 @@ impl TypedActionView for AppearanceSettingsPageView {
             ToggleTabIndicators => self.toggle_tab_indicators(ctx),
             ToggleShowCodeReviewButton => self.toggle_show_code_review_button(ctx),
             TogglePreserveActiveTabColor => self.toggle_preserve_active_tab_color(ctx),
+            ToggleColorTabsByCliAgentStatus => self.toggle_color_tabs_by_cli_agent_status(ctx),
             ToggleVerticalTabs => self.toggle_vertical_tabs(ctx),
             ToggleShowVerticalTabPanelInRestoredWindows => {
                 self.toggle_show_vertical_tab_panel_in_restored_windows(ctx)
@@ -1384,6 +1387,7 @@ impl AppearanceSettingsPageView {
             tab_settings_widgets.push(Box::new(TabCloseButtonPositionWidget::default()));
         }
         tab_settings_widgets.push(Box::new(PreserveActiveTabColorWidget::default()));
+        tab_settings_widgets.push(Box::new(ColorTabsByCliAgentStatusWidget::default()));
 
         if FeatureFlag::VerticalTabs.is_enabled() {
             tab_settings_widgets.push(Box::new(VerticalTabsWidget::default()));
@@ -2309,6 +2313,20 @@ impl AppearanceSettingsPageView {
             TelemetryEvent::TogglePreserveActiveTabColor { enabled: new_value },
             ctx
         );
+    }
+
+    fn toggle_color_tabs_by_cli_agent_status(&mut self, ctx: &mut ViewContext<Self>) {
+        let tab_settings = TabSettings::handle(ctx);
+        let new_value = !*tab_settings
+            .as_ref(ctx)
+            .color_tabs_by_cli_agent_status
+            .value();
+
+        ctx.update_model(&tab_settings, move |tab_settings, ctx| {
+            report_if_error!(tab_settings
+                .color_tabs_by_cli_agent_status
+                .set_value(new_value, ctx));
+        });
     }
 
     fn toggle_vertical_tabs(&mut self, ctx: &mut ViewContext<Self>) {
@@ -4514,6 +4532,56 @@ impl SettingsWidget for CodeReviewButtonWidget {
                 })
                 .finish(),
             None,
+        )
+    }
+}
+
+#[derive(Default)]
+struct ColorTabsByCliAgentStatusWidget {
+    switch_state: SwitchStateHandle,
+}
+
+impl SettingsWidget for ColorTabsByCliAgentStatusWidget {
+    type View = AppearanceSettingsPageView;
+
+    fn search_terms(&self) -> &str {
+        "tab color claude code cli agent status in progress unseen"
+    }
+
+    fn render(
+        &self,
+        view: &Self::View,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let tab_settings = TabSettings::as_ref(app);
+
+        render_body_item::<AppearancePageAction>(
+            "Color tabs by CLI agent status".into(),
+            None,
+            LocalOnlyIconState::for_setting(
+                ColorTabsByCliAgentStatus::storage_key(),
+                ColorTabsByCliAgentStatus::sync_to_cloud(),
+                &mut view.local_only_icon_tooltip_states.borrow_mut(),
+                app,
+            ),
+            ToggleState::Enabled,
+            appearance,
+            appearance
+                .ui_builder()
+                .switch(self.switch_state.clone())
+                .check(*tab_settings.color_tabs_by_cli_agent_status)
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(
+                        AppearancePageAction::ToggleColorTabsByCliAgentStatus,
+                    );
+                })
+                .finish(),
+            Some(
+                "Tint tabs running Claude Code (or any rich-status CLI agent): green for in-progress, yellow for finished but unseen, blue for finished and viewed. User-set per-tab colors always take precedence."
+                    .into(),
+            ),
         )
     }
 }

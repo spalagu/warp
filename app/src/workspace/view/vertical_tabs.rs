@@ -884,6 +884,43 @@ fn normalize_summary_text(text: &str) -> Option<String> {
     (!normalized.is_empty()).then_some(normalized)
 }
 
+/// Derives a soft status-tinted background for a terminal pane that is currently
+/// hosting a CLI agent session (Claude Code etc.). Used as a fallback for
+/// `pane_color` so that user-configured per-tab colors always take precedence.
+///
+/// Returns:
+/// - `None` when the toggle is disabled, no session is tracked, or the agent
+///   doesn't expose rich status.
+/// - In-progress sessions tint green (active work).
+/// - Completed-but-unseen sessions tint yellow (needs your attention).
+/// - Completed-and-seen sessions tint blue (still needs a reply but already viewed).
+fn cli_agent_status_color(
+    pane_group: &PaneGroup,
+    pane_id: PaneId,
+    theme: &WarpTheme,
+    app: &AppContext,
+) -> Option<ThemeFill> {
+    if !*TabSettings::as_ref(app).color_tabs_by_cli_agent_status {
+        return None;
+    }
+    let terminal_pane = pane_group.downcast_pane_by_id::<crate::pane_group::TerminalPane>(pane_id)?;
+    let terminal_view = terminal_pane.terminal_view(app);
+    let terminal_view_id = terminal_view.as_ref(app).id();
+    let sessions = CLIAgentSessionsModel::as_ref(app);
+    let session = sessions.session(terminal_view_id)?;
+    if !agent_supports_rich_status(&session.agent) {
+        return None;
+    }
+    let color = match session.status {
+        crate::terminal::cli_agent_sessions::CLIAgentSessionStatus::InProgress => {
+            theme.ansi_fg_green()
+        }
+        _ if session.viewed_after_last_done => theme.ansi_fg_blue(),
+        _ => theme.ansi_fg_yellow(),
+    };
+    Some(ThemeFill::Solid(color))
+}
+
 /// Returns the conversation status for a terminal pane, used to render the per-line status
 /// pill prefix in Summary mode. Mirrors the status sources used by `render_detail_status_pill`
 /// in the detail sidecar — CLI agent sessions with rich status, Oz agent conversations, or
@@ -1894,7 +1931,8 @@ fn render_tab_group_internal(
                 let pane_color = per_pane_colors
                     .as_ref()
                     .and_then(|map| map.get(pane_id).copied())
-                    .flatten();
+                    .flatten()
+                    .or_else(|| cli_agent_status_color(pane_group, *pane_id, theme, app));
                 let badge_mouse_states = state
                     .pane_badge_mouse_states
                     .borrow_mut()
@@ -1940,7 +1978,8 @@ fn render_tab_group_internal(
                 let pane_color = per_pane_colors
                     .as_ref()
                     .and_then(|map| map.get(pane_id).copied())
-                    .flatten();
+                    .flatten()
+                    .or_else(|| cli_agent_status_color(pane_group, *pane_id, theme, app));
                 let badge_mouse_states = state
                     .pane_badge_mouse_states
                     .borrow_mut()
