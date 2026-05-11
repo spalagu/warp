@@ -180,7 +180,7 @@ use crate::launch_configs::launch_config::WindowTemplate;
 use crate::pane_group::{
     AIFactPane, ChildAgentOrigin, CodeReviewPanelArg, Direction as PaneGroupDirection,
     EnvironmentManagementPane, ExecutionProfileEditorPane, NetworkLogPane, PaneGroup, PaneId,
-    TerminalPaneId,
+    TerminalPane, TerminalPaneId,
 };
 use crate::quit_warning::UnsavedStateSummary;
 use crate::search::command_palette::view::NavigationMode;
@@ -3539,6 +3539,9 @@ impl Workspace {
                 self.sync_panel_positions_from_config(ctx);
                 ctx.notify();
             }
+            TabSettingsChangedEvent::ColorTabsByCliAgentStatus { .. } => {
+                ctx.notify();
+            }
         }
     }
 
@@ -5397,6 +5400,16 @@ impl Workspace {
             .enumerate()
             .find(|(_, tab_data)| tab_data.pane_group.id() == pane_view_locator.pane_group_id)
         {
+            // Capture the focused terminal_view_id (if this pane is a terminal)
+            // before any further mutation, so we can notify the CLI agent
+            // sessions model after the focus completes.
+            let focused_terminal_view_id = tab
+                .pane_group
+                .as_ref(ctx)
+                .downcast_pane_by_id::<TerminalPane>(pane_view_locator.pane_id)
+                .map(|tp| tp.terminal_view(ctx))
+                .map(|view_handle| view_handle.as_ref(ctx).id());
+
             // Update the pane group to focus the active pane,
             // and then focus the pane group (tab). The order is important
             // because if we otherwise focus the tab first and another pane
@@ -5408,6 +5421,12 @@ impl Workspace {
             });
             self.activate_tab_internal(index, ctx);
             ctx.notify();
+
+            if let Some(terminal_view_id) = focused_terminal_view_id {
+                CLIAgentSessionsModel::handle(ctx).update(ctx, |model, _| {
+                    model.mark_session_viewed(terminal_view_id);
+                });
+            }
         }
     }
 

@@ -141,6 +141,12 @@ pub struct CLIAgentSession {
     /// the first word of the command (the binary/alias the user typed).
     /// Used to customize plugin instructions and force manual install mode.
     pub custom_command_prefix: Option<String>,
+    /// Whether the user has viewed (focused this pane) since the most recent
+    /// transition from `InProgress` to a non-`InProgress` status. Used by the
+    /// vertical tab background tint to distinguish "completed but unseen"
+    /// (yellow) from "completed and seen" (blue). Initialized to `true` so
+    /// fresh sessions don't claim attention before any completion occurs.
+    pub viewed_after_last_done: bool,
 }
 
 impl CLIAgentSession {
@@ -223,8 +229,26 @@ impl CLIAgentSession {
             CLIAgentEventType::Unknown(_) => return None,
         };
 
+        // Track whether the user has seen this completion. A transition from
+        // `InProgress` to any other status marks the session as unseen; a
+        // transition into `InProgress` clears the flag (the previous unseen
+        // window is over because the agent is working again).
+        let was_in_progress = matches!(self.status, CLIAgentSessionStatus::InProgress);
+        let now_in_progress = matches!(new_status, CLIAgentSessionStatus::InProgress);
+        if was_in_progress && !now_in_progress {
+            self.viewed_after_last_done = false;
+        } else if !was_in_progress && now_in_progress {
+            self.viewed_after_last_done = true;
+        }
+
         self.status = new_status.clone();
         Some(new_status)
+    }
+
+    /// Marks this session as viewed by the user (typically called when the
+    /// pane gains focus). Idempotent.
+    pub fn mark_viewed(&mut self) {
+        self.viewed_after_last_done = true;
     }
 }
 
@@ -378,6 +402,7 @@ impl CLIAgentSessionsModel {
                 remote_host,
                 draft_text: None,
                 custom_command_prefix: None,
+                viewed_after_last_done: true,
             },
             ctx,
         );
@@ -478,6 +503,14 @@ impl CLIAgentSessionsModel {
             previous_input_state,
             new_input_state: CLIAgentInputState::Closed,
         });
+    }
+
+    /// Marks the session for `terminal_view_id` as viewed by the user (called
+    /// when the corresponding pane gains focus). No-op when no session exists.
+    pub fn mark_session_viewed(&mut self, terminal_view_id: EntityId) {
+        if let Some(session) = self.sessions.get_mut(&terminal_view_id) {
+            session.mark_viewed();
+        }
     }
 
     pub fn set_session(

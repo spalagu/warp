@@ -479,6 +479,15 @@ define_settings_group!(TabSettings, settings: [
         toml_path: "appearance.tabs.preserve_active_tab_color",
         description: "Whether to preserve the active tab's color when switching tabs.",
     },
+    color_tabs_by_cli_agent_status: ColorTabsByCliAgentStatus {
+        type: bool,
+        default: true,
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        private: false,
+        toml_path: "appearance.tabs.color_by_cli_agent_status",
+        description: "When enabled, terminal tabs running a CLI agent (Claude Code, etc.) get a tinted background reflecting the agent's status: green for in-progress, yellow for finished but unseen, blue for finished and viewed. User-set per-tab colors always take precedence.",
+    },
     use_vertical_tabs: UseVerticalTabs {
         type: bool,
         default: false,
