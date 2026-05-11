@@ -901,24 +901,54 @@ fn cli_agent_status_color(
     app: &AppContext,
 ) -> Option<ThemeFill> {
     if !*TabSettings::as_ref(app).color_tabs_by_cli_agent_status {
+        log::debug!("cli_agent_status_color: setting disabled");
         return None;
     }
-    let terminal_pane = pane_group.downcast_pane_by_id::<crate::pane_group::TerminalPane>(pane_id)?;
-    let terminal_view = terminal_pane.terminal_view(app);
+    let Some(terminal_view) = pane_group.terminal_view_from_pane_id(pane_id, app) else {
+        log::debug!("cli_agent_status_color: pane {pane_id:?} not a terminal pane");
+        return None;
+    };
     let terminal_view_id = terminal_view.as_ref(app).id();
     let sessions = CLIAgentSessionsModel::as_ref(app);
-    let session = sessions.session(terminal_view_id)?;
+    let Some(session) = sessions.session(terminal_view_id) else {
+        log::debug!("cli_agent_status_color: no CLI agent session for terminal_view {terminal_view_id:?}");
+        return None;
+    };
     if !agent_supports_rich_status(&session.agent) {
+        log::debug!(
+            "cli_agent_status_color: agent {:?} doesn't support rich status",
+            session.agent
+        );
         return None;
     }
-    let color = match session.status {
+    let ansi = match session.status {
         crate::terminal::cli_agent_sessions::CLIAgentSessionStatus::InProgress => {
-            theme.ansi_fg_green()
+            log::info!(
+                "cli_agent_status_color: tinting GREEN (in-progress) for {:?}",
+                session.agent
+            );
+            AnsiColorIdentifier::Green
         }
-        _ if session.viewed_after_last_done => theme.ansi_fg_blue(),
-        _ => theme.ansi_fg_yellow(),
+        _ if session.viewed_after_last_done => {
+            log::info!(
+                "cli_agent_status_color: tinting BLUE (viewed after done) for {:?}",
+                session.agent
+            );
+            AnsiColorIdentifier::Blue
+        }
+        _ => {
+            log::info!(
+                "cli_agent_status_color: tinting YELLOW (unseen after done) for {:?}",
+                session.agent
+            );
+            AnsiColorIdentifier::Yellow
+        }
     };
-    Some(ThemeFill::Solid(color))
+    // Use the saturated terminal-palette ANSI color directly (the same source
+    // used by directory_tab_colors) rather than `theme.ansi_fg_*`, which
+    // pre-blends at 50% opacity against the foreground and ends up nearly
+    // invisible after the additional TAB_COLOR_OPACITY (15/255) tab tint.
+    Some(ansi.to_ansi_color(&theme.terminal_colors().normal).into())
 }
 
 /// Returns the conversation status for a terminal pane, used to render the per-line status
