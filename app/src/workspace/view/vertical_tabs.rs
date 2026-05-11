@@ -903,22 +903,24 @@ fn cli_agent_status_color(
     if !*TabSettings::as_ref(app).color_tabs_by_cli_agent_status {
         return None;
     }
-    let terminal_pane = pane_group.downcast_pane_by_id::<crate::pane_group::TerminalPane>(pane_id)?;
-    let terminal_view = terminal_pane.terminal_view(app);
+    let terminal_view = pane_group.terminal_view_from_pane_id(pane_id, app)?;
     let terminal_view_id = terminal_view.as_ref(app).id();
-    let sessions = CLIAgentSessionsModel::as_ref(app);
-    let session = sessions.session(terminal_view_id)?;
+    let session = CLIAgentSessionsModel::as_ref(app).session(terminal_view_id)?;
     if !agent_supports_rich_status(&session.agent) {
         return None;
     }
-    let color = match session.status {
+    let ansi = match session.status {
         crate::terminal::cli_agent_sessions::CLIAgentSessionStatus::InProgress => {
-            theme.ansi_fg_green()
+            AnsiColorIdentifier::Green
         }
-        _ if session.viewed_after_last_done => theme.ansi_fg_blue(),
-        _ => theme.ansi_fg_yellow(),
+        _ if session.viewed_after_last_done => AnsiColorIdentifier::Blue,
+        _ => AnsiColorIdentifier::Yellow,
     };
-    Some(ThemeFill::Solid(color))
+    // Use the saturated terminal-palette ANSI color directly (the same source
+    // used by directory_tab_colors) rather than `theme.ansi_fg_*`, which
+    // pre-blends at 50% opacity against the foreground and ends up nearly
+    // invisible after the additional TAB_COLOR_OPACITY (15/255) tab tint.
+    Some(ansi.to_ansi_color(&theme.terminal_colors().normal).into())
 }
 
 /// Returns the conversation status for a terminal pane, used to render the per-line status
