@@ -71,7 +71,7 @@ use warpui::elements::{
     DragBarSide, Draggable, DropShadow, DropTarget, Element, Empty, EventHandler, Expanded,
     Fill as ElementFill, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle,
     OffsetPositioning, Padding, ParentAnchor, ParentElement, ParentOffsetBounds,
-    PositionedElementAnchor, PositionedElementOffsetBounds, Radius, Resizable,
+    PositionedElementAnchor, PositionedElementOffsetBounds, Radius, Rect, Resizable,
     ResizableStateHandle, SavePosition, ScrollTarget, ScrollToPositionMode, ScrollbarWidth,
     Shrinkable, Stack, Text,
 };
@@ -105,7 +105,8 @@ const DETAIL_SIDECAR_CORNER_RADIUS: f32 = 4.;
 /// so the row doesn't resize when badges are toggled.
 const METADATA_ROW_HEIGHT: f32 = BADGE_ICON_SIZE + 2.;
 const TAB_COLOR_OPACITY: Opacity = 15;
-const TAB_COLOR_HOVER_OPACITY: Opacity = 50;
+const FOCUS_MARKER_WIDTH: f32 = 4.;
+const FOCUS_MARKER_HOVER_OPACITY: Opacity = 40;
 
 // Circular icon constants
 const ICON_WITH_STATUS_GAP: f32 = 8.;
@@ -271,25 +272,34 @@ struct PaneGroupStateHandles {
 
 fn pane_row_background(
     pane_color: Option<ThemeFill>,
-    is_selected: bool,
-    is_hovered: bool,
     is_being_dragged: bool,
     theme: &WarpTheme,
 ) -> Option<ThemeFill> {
     if let Some(color) = pane_color {
-        let opacity = if is_selected || is_hovered {
-            TAB_COLOR_HOVER_OPACITY
-        } else {
-            TAB_COLOR_OPACITY
-        };
-        Some(color.with_opacity(opacity))
-    } else if is_selected {
-        Some(internal_colors::fg_overlay_2(theme))
-    } else if is_being_dragged || is_hovered {
+        Some(color.with_opacity(TAB_COLOR_OPACITY))
+    } else if is_being_dragged {
         Some(internal_colors::fg_overlay_1(theme))
     } else {
         None
     }
+}
+
+fn pane_row_focus_marker_fill(
+    pane_color: Option<ThemeFill>,
+    is_selected: bool,
+    is_hovered: bool,
+    theme: &WarpTheme,
+) -> Option<ThemeFill> {
+    if !is_selected && !is_hovered {
+        return None;
+    }
+    let base = pane_color.unwrap_or_else(|| theme.accent());
+    let opacity = if is_selected {
+        100
+    } else {
+        FOCUS_MARKER_HOVER_OPACITY
+    };
+    Some(base.with_opacity(opacity))
 }
 
 fn render_pane_row_element(
@@ -333,27 +343,44 @@ fn render_pane_row_element(
     } = props;
     let is_selected = is_active_tab && is_focused;
     let mut row = Hoverable::new(mouse_state, move |state| {
+        let is_hovered = state.is_hovered();
         let mut container = Container::new(Clipped::new(content).finish())
             .with_padding(padding)
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(ROW_CORNER_RADIUS)));
 
-        if let Some(background) = pane_row_background(
-            pane_color,
-            is_selected,
-            state.is_hovered(),
-            is_being_dragged,
-            theme,
-        ) {
+        if let Some(background) = pane_row_background(pane_color, is_being_dragged, theme) {
             container = container.with_background(background);
         }
 
-        container
-            .with_border(Border::all(1.).with_border_fill(if is_selected {
-                internal_colors::fg_overlay_3(theme).into()
-            } else {
-                ElementFill::None
-            }))
-            .finish()
+        let container_element = container.finish();
+
+        match pane_row_focus_marker_fill(pane_color, is_selected, is_hovered, theme) {
+            Some(marker_fill) => {
+                let marker = ConstrainedBox::new(
+                    Rect::new()
+                        .with_background(marker_fill)
+                        .with_corner_radius(CornerRadius::with_left(Radius::Pixels(
+                            ROW_CORNER_RADIUS,
+                        )))
+                        .finish(),
+                )
+                .with_width(FOCUS_MARKER_WIDTH)
+                .finish();
+                Stack::new()
+                    .with_child(container_element)
+                    .with_positioned_child(
+                        marker,
+                        OffsetPositioning::offset_from_parent(
+                            vec2f(0., 0.),
+                            ParentOffsetBounds::ParentBySize,
+                            ParentAnchor::TopLeft,
+                            ChildAnchor::TopLeft,
+                        ),
+                    )
+                    .finish()
+            }
+            None => container_element,
+        }
     })
     .on_click(move |ctx, _, _| {
         ctx.dispatch_typed_action(WorkspaceAction::FocusPane(PaneViewLocator {
